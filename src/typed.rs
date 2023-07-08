@@ -1,5 +1,5 @@
 use crate::ast::Literal;
-use crate::{CompiledIndex, TypeId};
+use crate::{CompiledIndex, FileId, TypeId};
 
 pub type VarIndex = u32;
 
@@ -16,6 +16,23 @@ pub enum Instruction {
         Box<StaticExpression>,
         Box<StaticExpression>,
     ),
-    Const(Literal),
+    Const(Const),
     LetIn(VarIndex, Box<StaticExpression>, Box<StaticExpression>),
+}
+
+pub enum Const {
+    Bool(bool),
+    Int(i64),
+    Float(f64),
+}
+
+pub struct Type {
+    size: u16,
+    origin: FileId,
+}
+
+impl Type {
+    pub fn size(&self) -> usize {
+        self.size as usize
+    }
 }

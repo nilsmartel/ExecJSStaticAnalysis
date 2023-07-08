@@ -7,39 +7,106 @@ use std::collections::HashMap;
 use ast::{Ast, Bodyitem, Expression};
 use hotel::HotelMap;
 pub use id::*;
-use typed::StaticExpression;
+use typed::{StaticExpression, Type};
 
 use crate::ast::Func;
 
 fn main() {
     let cc: CompilerContext = todo!();
-    let (fid, iid) = cc.find_main().expect("find main");
 
     let _ = cc.resolve((fid, iid, Vec::new()), Vec::new());
+}
+
+/// TypeIDs of the buildin types.
+/// Needed to create literals and such.
+struct BuildTypeIds {
+    boolean: TypeId,
+    integer: TypeId,
+    float: TypeId,
+    // string: TypeId,
 }
 
 struct CompilerContext {
     files: HotelMap<String, FileContext>,
 
+    buildintypes: BuildTypeIds,
+
+    types: HotelMap<SSID, Type>,
     compiled_funcs: HotelMap<SSID, StaticExpression>,
 }
 
 pub type CompiledIndex = usize;
 
-impl CompilerContext {
-    pub fn find_main(&self) -> Option<SID> {
-        let mainfile = "main.tys".to_string();
-        let (fileid, context) = self.files.get_by_key(&mainfile)?;
+pub fn find_symbol(
+    files: &HotelMap<String, FileContext>,
+    filename: &str,
+    symbol: &str,
+) -> Option<SID> {
+    let filename = filename.to_string();
+    let (fileid, context) = files.get_by_key(&filename)?;
 
-        for (i, item) in context.ast.items.iter().enumerate() {
-            let Bodyitem::Func(item) = item;
+    for (i, item) in context.ast.items.iter().enumerate() {
+        let Bodyitem::Func(item) = item;
 
-            if item.name == "main" {
-                return Some((fileid as u32, i as u32));
-            }
+        if item.name == symbol {
+            return Some((fileid as u32, i as u32));
         }
+    }
 
-        None
+    None
+}
+impl CompilerContext {
+    pub fn setup(files: HotelMap<String, FileContext>) -> Self {
+        // Find main function and file of main
+        let (fileid, mainid) =
+            find_symbol(&files, "main.tys", "main").expect("to find main in main.tys");
+
+        // Resolve imports to find buildin types
+        let mainfile = &files.get_by_index(fileid as usize).unwrap();
+        let symbols = mainfile.symbols;
+
+        // Compile buildin types to concrete symbols! Yay :)
+        let mut types = HotelMap::new();
+
+        let file: FileId = symbols["bool"];
+        let ty = Type {
+            size: 1,
+            origin: file,
+        };
+        let ssid: SSID = (file, /*TODO choose proper definition */ 0, Vec::new());
+
+        let boolid = types.insert(ssid, ty);
+
+        let file: FileId = symbols["int"];
+        let ty = Type {
+            size: 8,
+            origin: file,
+        };
+        let ssid: SSID = (file, /*TODO choose proper definition */ 0, Vec::new());
+
+        let intid = types.insert(ssid, ty);
+
+        let file: FileId = symbols["float"];
+        let ty = Type {
+            size: 8,
+            origin: file,
+        };
+        let ssid: SSID = (file, /*TODO choose proper definition */ 0, Vec::new());
+
+        let floatid = types.insert(ssid, ty);
+
+        let buildintypes = BuildTypeIds {
+            boolean: boolid as TypeId,
+            integer: intid as TypeId,
+            float: floatid as TypeId,
+        };
+
+        Self {
+            files,
+            buildintypes,
+            types,
+            compiled_funcs: HotelMap::new(),
+        }
     }
 
     /// Resolves a function and builds the compiled_funcs
@@ -115,6 +182,9 @@ impl CompilerContext {
                 let branchfalse = self.resolve_expr(&branchfalse, symbols, &mut stack);
 
                 // TODO Assert, that condition returns a boolean
+                if condition.ty != self.buildintypes.boolean {
+                    panic!("expect bool in if condition");
+                }
 
                 // TODO one can Wrap types in interesting ways here!
                 if branchtrue.ty != branchfalse.ty {
@@ -132,7 +202,17 @@ impl CompilerContext {
                     ty,
                 }
             }
-            ast::Expression::Literal(l) => {}
+            ast::Expression::Literal(l) => {
+                let instr = typed::Instruction::Const(l.to_const());
+
+                let ty = match l {
+                    ast::Literal::Integer(_) => self.buildintypes.integer,
+                    ast::Literal::Float(_) => self.buildintypes.float,
+                    ast::Literal::Bool(_) => self.buildintypes.boolean,
+                };
+
+                StaticExpression { instr, ty }
+            }
             ast::Expression::LetIn(varname, assign, expr) => {
                 let assign = self.resolve_expr(&assign, symbols, &mut stack);
                 stack.push(varname.to_string(), assign.ty);
@@ -160,7 +240,7 @@ impl Stack {
     pub fn get(&self, name: &str) -> (CompiledIndex, TypeId) {
         for (i, (n, ty)) in self.items.iter().enumerate() {
             if n == name {
-                return (i, ty);
+                return (i, *ty);
             }
         }
 

@@ -1,4 +1,4 @@
-use crate::ItemId;
+use crate::{typed::Const, ItemId};
 
 pub struct Ast {
     pub imports: Vec<Import>,
@@ -46,4 +46,14 @@ pub enum Literal {
     Integer(i64),
     Float(f64),
     Bool(bool),
+}
+
+impl Literal {
+    pub fn to_const(&self) -> Const {
+        match self {
+            Literal::Integer(i) => Const::Int(*i),
+            Literal::Float(f) => Const::Float(*f),
+            Literal::Bool(b) => Const::Bool(*b),
+        }
+    }
 }
