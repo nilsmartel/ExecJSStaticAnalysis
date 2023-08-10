@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 hotel = "1.0.2"                         # Collection Data-structure to associate values with keys
+cranelift = "0.98.1"                                # Umbrella for commonly-used cranelift crates
